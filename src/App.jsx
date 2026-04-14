@@ -299,8 +299,8 @@ function SimpleSelect({ value, onChange, options, className = "" }) {
 
 export default function SistemaControleNegocio() {
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [products, setProducts] = useState(initialProducts);
-  const [sales, setSales] = useState(initialSales);
+  const [products, setProducts] = useState([]);
+  const [sales, setSales] = useState([]);
   const [productForm, setProductForm] = useState({ name: "", quantity: "", costTotal: "", wholesale: "", retail: "" });
   const [saleForm, setSaleForm] = useState({ date: todayISO(), productId: "", type: "varejo", qty: "" });
   const [editingProductId, setEditingProductId] = useState(null);
