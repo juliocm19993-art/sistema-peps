@@ -342,13 +342,8 @@ export default function SistemaControleNegocio() {
         return;
       }
 
-      if (productsData?.length) {
-        setProducts(productsData.map(mapProductFromDb));
-      }
-
-      if (salesData?.length) {
-        setSales(salesData.map(mapSaleFromDb));
-      }
+setProducts((productsData || []).map(mapProductFromDb));
+setSales((salesData || []).map(mapSaleFromDb));
 
       setLastSync(new Date().toLocaleString("pt-BR"));
       setLoading(false);
