@@ -871,8 +871,19 @@ setSales((salesData || []).map(mapSaleFromDb));
 
         <div className="mb-8 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <KPI title="Custo do estoque" value={brl(totals.inventoryCost)} subtitle="Base cadastrada" icon={Package} />
-          <KPI title="Potencial atacado" value={brl(totals.potentialWholesale)} subtitle="Venda total por lote" icon={Boxes} />
-          <KPI title="Potencial varejo" value={brl(totals.potentialRetail)} subtitle="Venda total máxima" icon={TrendingUp} />
+<KPI
+  title="Lucro atacado"
+  value={brl(totals.stockProfitWholesale)}
+  subtitle={`${totals.stockMarginWholesale.toFixed(1)}% sobre o custo`}
+  icon={Boxes}
+/>
+
+<KPI
+  title="Lucro varejo"
+  value={brl(totals.stockProfitRetail)}
+  subtitle={`${totals.stockMarginRetail.toFixed(1)}% sobre o custo`}
+  icon={TrendingUp}
+/>
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
             <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-2xl backdrop-blur-xl">
               <div className="flex items-start justify-between gap-4">
