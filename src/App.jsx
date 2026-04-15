@@ -92,6 +92,55 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function parseBRNumber(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (value === null || value === undefined) return 0;
+
+  const raw = String(value).trim();
+  if (!raw) return 0;
+
+  const cleaned = raw
+    .replace(/R\$/gi, "")
+    .replace(/\s+/g, "")
+    .replace(/\.(?=\d{3}(\D|$))/g, "")
+    .replace(/,/g, ".")
+    .replace(/[^\d.-]/g, "");
+
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatMoneyInput(value) {
+  return brl(parseBRNumber(value));
+}
+
+function parseBulkProducts(text) {
+  return String(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const cols = line.split(/\t+/).map((part) => part.trim()).filter(Boolean);
+
+      if (cols.length < 5) {
+        throw new Error("Cada linha precisa ter pelo menos: nome, unidades, custo total, atacado e varejo.");
+      }
+
+      const [name, quantity, costTotal, maybeCostUnit, maybeWholesale, maybeRetail] = cols;
+
+      const hasSixCols = cols.length >= 6;
+
+      return {
+        id: Date.now() + Math.floor(Math.random() * 1000000),
+        name,
+        quantity: parseBRNumber(quantity),
+        costTotal: parseBRNumber(costTotal),
+        wholesale: parseBRNumber(hasSixCols ? maybeWholesale : maybeCostUnit),
+        retail: parseBRNumber(hasSixCols ? maybeRetail : maybeWholesale),
+      };
+    });
+}
+
 function getSupabaseConfig() {
   const env =
     typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
@@ -315,7 +364,9 @@ export default function SistemaControleNegocio() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
-  const [productForm, setProductForm] = useState({ name: "", quantity: "", costTotal: "", wholesale: "", retail: "" });
+  const [productForm, setProductForm] = useState({ bulkText: "" });
+  const [editingAllProducts, setEditingAllProducts] = useState(false);
+  const [productDrafts, setProductDrafts] = useState([]);
   const [saleForm, setSaleForm] = useState({ date: todayISO(), productId: "", type: "varejo", qty: "" });
   const [editingProductId, setEditingProductId] = useState(null);
   const [editingSaleId, setEditingSaleId] = useState(null);
@@ -371,6 +422,19 @@ setSales((salesData || []).map(mapSaleFromDb));
 
 
   const enrichedProducts = useMemo(() => products.map((product) => computeProductMetrics(product, sales)), [products, sales]);
+
+  useEffect(() => {
+    setProductDrafts(
+      products.map((product) => ({
+        id: product.id,
+        name: product.name,
+        quantity: String(Number(product.quantity || 0)),
+        costTotal: formatMoneyInput(product.costTotal),
+        wholesale: formatMoneyInput(product.wholesale),
+        retail: formatMoneyInput(product.retail),
+      }))
+    );
+  }, [products]);
   const enrichedSales = useMemo(() => sales.map((sale) => computeSaleMetrics(sale, enrichedProducts)), [sales, enrichedProducts]);
 
   const totals = useMemo(() => {
@@ -450,26 +514,85 @@ setSales((salesData || []).map(mapSaleFromDb));
     setLastSync(new Date().toLocaleString("pt-BR"));
   }
 
-  async function addProduct() {
-    if (!productForm.name || !productForm.quantity || !productForm.costTotal || !productForm.wholesale || !productForm.retail) return;
 
-    const newProduct = {
-      id: Date.now(),
-      name: productForm.name,
-      quantity: toNumber(productForm.quantity),
-      costTotal: toNumber(productForm.costTotal),
-      wholesale: toNumber(productForm.wholesale),
-      retail: toNumber(productForm.retail),
-    };
+  function startEditAllProducts() {
+    setEditingAllProducts(true);
+    setProductDrafts(
+      products.map((product) => ({
+        id: product.id,
+        name: product.name,
+        quantity: String(Number(product.quantity || 0)),
+        costTotal: formatMoneyInput(product.costTotal),
+        wholesale: formatMoneyInput(product.wholesale),
+        retail: formatMoneyInput(product.retail),
+      }))
+    );
+  }
+
+  function cancelEditAllProducts() {
+    setEditingAllProducts(false);
+    setProductDrafts(
+      products.map((product) => ({
+        id: product.id,
+        name: product.name,
+        quantity: String(Number(product.quantity || 0)),
+        costTotal: formatMoneyInput(product.costTotal),
+        wholesale: formatMoneyInput(product.wholesale),
+        retail: formatMoneyInput(product.retail),
+      }))
+    );
+  }
+
+  function updateProductDraft(productId, field, value) {
+    setProductDrafts((prev) =>
+      prev.map((item) => (item.id === productId ? { ...item, [field]: value } : item))
+    );
+  }
+
+  async function saveAllProducts() {
+    try {
+      setSyncing(true);
+      setDbError("");
+
+      const normalizedProducts = productDrafts.map((item) => ({
+        id: Number(item.id),
+        name: String(item.name || "").trim(),
+        quantity: parseBRNumber(item.quantity),
+        costTotal: parseBRNumber(item.costTotal),
+        wholesale: parseBRNumber(item.wholesale),
+        retail: parseBRNumber(item.retail),
+      }));
+
+      for (const product of normalizedProducts) {
+        await persistProduct(product);
+      }
+
+      setProducts(normalizedProducts);
+      setEditingAllProducts(false);
+    } catch (error) {
+      setDbError(error.message || "Erro ao salvar todos os produtos.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function addProduct() {
+    if (!productForm.bulkText || !String(productForm.bulkText).trim()) return;
 
     try {
       setSyncing(true);
       setDbError("");
-      await persistProduct(newProduct);
-      setProducts((prev) => [...prev, newProduct]);
-      setProductForm({ name: "", quantity: "", costTotal: "", wholesale: "", retail: "" });
+
+      const rows = parseBulkProducts(productForm.bulkText);
+
+      for (const row of rows) {
+        await persistProduct(row);
+      }
+
+      setProducts((prev) => [...prev, ...rows]);
+      setProductForm({ bulkText: "" });
     } catch (error) {
-      setDbError(error.message || "Erro ao salvar produto.");
+      setDbError(error.message || "Erro ao inserir produtos em lote.");
     } finally {
       setSyncing(false);
     }
@@ -829,18 +952,49 @@ setSales((salesData || []).map(mapSaleFromDb));
             <SectionTitle icon={Boxes} title="Cadastro de produtos" description="A lista fica primeiro e o formulário de novo produto vem abaixo para facilitar a edição." />
 
             <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur-xl">
-              <h3 className="mb-4 text-white text-lg font-semibold">Tabela de produtos</h3>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h3 className="text-white text-lg font-semibold">Tabela de produtos</h3>
+                <div className="flex gap-2">
+                  {editingAllProducts ? (
+                    <>
+                      <button
+                        onClick={saveAllProducts}
+                        disabled={syncing}
+                        className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:opacity-60"
+                      >
+                        Salvar todos
+                      </button>
+                      <button
+                        onClick={cancelEditAllProducts}
+                        className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white"
+                      >
+                        Cancelar
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={startEditAllProducts}
+                      className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white/90"
+                    >
+                      Editar todos
+                    </button>
+                  )}
+                </div>
+              </div>
 
               <div className="space-y-4 lg:hidden">
                 {enrichedProducts.map((product) => {
-                  const isEditing = editingProductId === product.id;
+                  const draft = productDrafts.find((item) => item.id === product.id);
                   return (
                     <div key={product.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                       <div className="mb-4 flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="break-words text-base font-semibold text-white">
-                            {isEditing ? (
-                              <RowInput value={productEditForm.name || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, name: e.target.value }))} />
+                            {editingAllProducts ? (
+                              <RowInput
+                                value={draft?.name || ""}
+                                onChange={(e) => updateProductDraft(product.id, "name", e.target.value)}
+                              />
                             ) : (
                               product.name
                             )}
@@ -859,30 +1013,46 @@ setSales((salesData || []).map(mapSaleFromDb));
 
                       <div className="grid grid-cols-2 gap-3">
                         <MobileField label="Unidades">
-                          {isEditing ? (
-                            <RowInput type="number" value={productEditForm.quantity || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, quantity: e.target.value }))} />
+                          {editingAllProducts ? (
+                            <RowInput
+                              type="text"
+                              value={draft?.quantity || ""}
+                              onChange={(e) => updateProductDraft(product.id, "quantity", e.target.value)}
+                            />
                           ) : (
                             product.quantity
                           )}
                         </MobileField>
                         <MobileField label="Custo unitário" value={brl(product.costUnit)} />
                         <MobileField label="Custo total">
-                          {isEditing ? (
-                            <RowInput type="number" value={productEditForm.costTotal || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, costTotal: e.target.value }))} />
+                          {editingAllProducts ? (
+                            <RowInput
+                              type="text"
+                              value={draft?.costTotal || ""}
+                              onChange={(e) => updateProductDraft(product.id, "costTotal", e.target.value)}
+                            />
                           ) : (
                             brl(product.costTotal)
                           )}
                         </MobileField>
                         <MobileField label="Atacado">
-                          {isEditing ? (
-                            <RowInput type="number" value={productEditForm.wholesale || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, wholesale: e.target.value }))} />
+                          {editingAllProducts ? (
+                            <RowInput
+                              type="text"
+                              value={draft?.wholesale || ""}
+                              onChange={(e) => updateProductDraft(product.id, "wholesale", e.target.value)}
+                            />
                           ) : (
                             brl(product.wholesale)
                           )}
                         </MobileField>
                         <MobileField label="Varejo">
-                          {isEditing ? (
-                            <RowInput type="number" value={productEditForm.retail || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, retail: e.target.value }))} />
+                          {editingAllProducts ? (
+                            <RowInput
+                              type="text"
+                              value={draft?.retail || ""}
+                              onChange={(e) => updateProductDraft(product.id, "retail", e.target.value)}
+                            />
                           ) : (
                             brl(product.retail)
                           )}
@@ -890,25 +1060,9 @@ setSales((salesData || []).map(mapSaleFromDb));
                       </div>
 
                       <div className="mt-4 flex items-center justify-end gap-2">
-                        {isEditing ? (
-                          <>
-                            <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-emerald-300" onClick={() => saveProduct(product.id)}>
-                              <Save className="h-4 w-4" />
-                            </button>
-                            <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/80" onClick={cancelEditProduct}>
-                              <X className="h-4 w-4" />
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-blue-300" onClick={() => startEditProduct(product)}>
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-red-300" onClick={() => deleteProduct(product.id)}>
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </>
-                        )}
+                        <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-red-300" onClick={() => deleteProduct(product.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     </div>
                   );
@@ -931,41 +1085,64 @@ setSales((salesData || []).map(mapSaleFromDb));
                   </thead>
                   <tbody>
                     {enrichedProducts.map((product) => {
-                      const isEditing = editingProductId === product.id;
+                      const draft = productDrafts.find((item) => item.id === product.id);
                       return (
                         <tr key={product.id} className="border-b border-white/10 align-middle">
                           <td className="p-3 text-white">
-                            {isEditing ? (
-                              <RowInput value={productEditForm.name || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, name: e.target.value }))} />
+                            {editingAllProducts ? (
+                              <RowInput
+                                value={draft?.name || ""}
+                                onChange={(e) => updateProductDraft(product.id, "name", e.target.value)}
+                              />
                             ) : (
                               product.name
                             )}
                           </td>
                           <td className="p-3 text-white/80">
-                            {isEditing ? (
-                              <RowInput type="number" value={productEditForm.quantity || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, quantity: e.target.value }))} className="w-20" />
+                            {editingAllProducts ? (
+                              <RowInput
+                                type="text"
+                                value={draft?.quantity || ""}
+                                onChange={(e) => updateProductDraft(product.id, "quantity", e.target.value)}
+                                className="w-20"
+                              />
                             ) : (
                               product.quantity
                             )}
                           </td>
                           <td className="p-3 text-white/80">
-                            {isEditing ? (
-                              <RowInput type="number" value={productEditForm.costTotal || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, costTotal: e.target.value }))} className="w-28" />
+                            {editingAllProducts ? (
+                              <RowInput
+                                type="text"
+                                value={draft?.costTotal || ""}
+                                onChange={(e) => updateProductDraft(product.id, "costTotal", e.target.value)}
+                                className="w-28"
+                              />
                             ) : (
                               brl(product.costTotal)
                             )}
                           </td>
                           <td className="p-3 text-white/80">{brl(product.costUnit)}</td>
                           <td className="p-3 text-white/80">
-                            {isEditing ? (
-                              <RowInput type="number" value={productEditForm.wholesale || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, wholesale: e.target.value }))} className="w-24" />
+                            {editingAllProducts ? (
+                              <RowInput
+                                type="text"
+                                value={draft?.wholesale || ""}
+                                onChange={(e) => updateProductDraft(product.id, "wholesale", e.target.value)}
+                                className="w-24"
+                              />
                             ) : (
                               brl(product.wholesale)
                             )}
                           </td>
                           <td className="p-3 text-white/80">
-                            {isEditing ? (
-                              <RowInput type="number" value={productEditForm.retail || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, retail: e.target.value }))} className="w-24" />
+                            {editingAllProducts ? (
+                              <RowInput
+                                type="text"
+                                value={draft?.retail || ""}
+                                onChange={(e) => updateProductDraft(product.id, "retail", e.target.value)}
+                                className="w-24"
+                              />
                             ) : (
                               brl(product.retail)
                             )}
@@ -983,25 +1160,9 @@ setSales((salesData || []).map(mapSaleFromDb));
                           </td>
                           <td className="p-3">
                             <div className="flex justify-end gap-2">
-                              {isEditing ? (
-                                <>
-                                  <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-emerald-300" onClick={() => saveProduct(product.id)}>
-                                    <Save className="h-4 w-4" />
-                                  </button>
-                                  <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/80" onClick={cancelEditProduct}>
-                                    <X className="h-4 w-4" />
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-blue-300" onClick={() => startEditProduct(product)}>
-                                    <Pencil className="h-4 w-4" />
-                                  </button>
-                                  <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-red-300" onClick={() => deleteProduct(product.id)}>
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                </>
-                              )}
+                              <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-red-300" onClick={() => deleteProduct(product.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -1014,40 +1175,42 @@ setSales((salesData || []).map(mapSaleFromDb));
 
             <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur-xl">
               <h3 className="mb-4 flex items-center gap-2 text-white text-lg font-semibold">
-                <Plus className="h-4 w-4" /> Novo produto
+                <Plus className="h-4 w-4" /> Inserção em lote
               </h3>
 
               <div className="space-y-4">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+                  Cole até 10 produtos por vez, um por linha, neste formato:
+                  <div className="mt-3 whitespace-pre-wrap rounded-xl border border-white/10 bg-black/20 p-3 font-mono text-xs text-white/80">
+{`Cagrilintide 5MG	0	R$ 530,40	R$ 0,00	R$ 600,00	R$ 950,00
+CJC-1295 5mg + IPA - 5mg	0	R$ 962,00	R$ 0,00	R$ 300,00	R$ 650,00`}
+                  </div>
+                  <div className="mt-2 text-xs text-white/50">
+                    Colunas: nome, unidades, custo total, custo unitário (pode ser zero), atacado, varejo.
+                  </div>
+                </div>
+
                 <div>
-                  <label className="text-sm text-white/80">Nome</label>
-                  <input
-                    className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-white outline-none"
-                    value={productForm.name}
-                    onChange={(e) => setProductForm((prev) => ({ ...prev, name: e.target.value }))}
-                    placeholder="Ex: RT30"
+                  <label className="text-sm text-white/80">Produtos em lote</label>
+                  <textarea
+                    rows={8}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none"
+                    value={productForm.bulkText}
+                    onChange={(e) => setProductForm({ bulkText: e.target.value })}
+                    placeholder={"Cole aqui uma linha por produto"}
                   />
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="text-sm text-white/80">Unidades</label>
-                    <input
-                      type="number"
-                      className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-white outline-none"
-                      value={productForm.quantity}
-                      onChange={(e) => setProductForm((prev) => ({ ...prev, quantity: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm text-white/80">Custo total</label>
-                    <input
-                      type="number"
-                      className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-white outline-none"
-                      value={productForm.costTotal}
-                      onChange={(e) => setProductForm((prev) => ({ ...prev, costTotal: e.target.value }))}
-                    />
-                  </div>
-                </div>
+                <button
+                  onClick={addProduct}
+                  disabled={syncing}
+                  className="w-full rounded-2xl bg-white py-3 font-semibold text-slate-900 transition hover:bg-white/90 disabled:opacity-60"
+                >
+                  Inserir produtos automaticamente
+                </button>
+              </div>
+            </div>
+          </div>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
