@@ -882,8 +882,8 @@ setSales((salesData || []).map(mapSaleFromDb));
   title="Lucro varejo"
   value={brl(totals.stockProfitRetail)}
 subtitle={
-  <span className={totals.stockMarginWholesale > 0 ? "text-emerald-400" : "text-red-400"}>
-    {totals.stockMarginWholesale.toFixed(1)}%
+  <span className={totals.stockMarginRetail.toFixed > 0 ? "text-emerald-400" : "text-red-400"}>
+    {totals.stockMarginRetail.toFixed(1)}%
   </span>
 }
   icon={TrendingUp}
