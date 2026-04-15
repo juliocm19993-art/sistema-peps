@@ -466,15 +466,34 @@ setSales((salesData || []).map(mapSaleFromDb));
       (sum, product) => sum + (Number(product.quantity || 0) > 0 ? Number(product.costTotal || 0) : 0),
       0
     );
+
     const potentialWholesale = enrichedProducts.reduce((sum, product) => sum + product.quantity * product.wholesale, 0);
     const potentialRetail = enrichedProducts.reduce((sum, product) => sum + product.quantity * product.retail, 0);
+
     const revenue = enrichedSales.reduce((sum, sale) => sum + sale.revenue, 0);
     const profit = enrichedSales.reduce((sum, sale) => sum + sale.profit, 0);
     const soldUnits = enrichedSales.reduce((sum, sale) => sum + sale.qty, 0);
-    const avgTicket = enrichedSales.length ? revenue / enrichedSales.length : 0;
     const lowStock = enrichedProducts.filter((product) => product.stockCurrent <= 5).length;
 
-    return { inventoryCost, potentialWholesale, potentialRetail, revenue, profit, soldUnits, avgTicket, lowStock };
+    const stockProfitWholesale = potentialWholesale - inventoryCost;
+    const stockProfitRetail = potentialRetail - inventoryCost;
+
+    const stockMarginWholesale = inventoryCost > 0 ? (stockProfitWholesale / inventoryCost) * 100 : 0;
+    const stockMarginRetail = inventoryCost > 0 ? (stockProfitRetail / inventoryCost) * 100 : 0;
+
+    return {
+      inventoryCost,
+      potentialWholesale,
+      potentialRetail,
+      revenue,
+      profit,
+      soldUnits,
+      lowStock,
+      stockProfitWholesale,
+      stockProfitRetail,
+      stockMarginWholesale,
+      stockMarginRetail,
+    };
   }, [enrichedProducts, enrichedSales]);
 
   const revenueByProduct = useMemo(() => {
@@ -854,7 +873,43 @@ setSales((salesData || []).map(mapSaleFromDb));
           <KPI title="Custo do estoque" value={brl(totals.inventoryCost)} subtitle="Base cadastrada" icon={Package} />
           <KPI title="Potencial atacado" value={brl(totals.potentialWholesale)} subtitle="Venda total por lote" icon={Boxes} />
           <KPI title="Potencial varejo" value={brl(totals.potentialRetail)} subtitle="Venda total máxima" icon={TrendingUp} />
-          <KPI title="Ticket médio" value={brl(totals.avgTicket)} subtitle="Por venda lançada" icon={Wallet} />
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-2xl backdrop-blur-xl">
+              <div className="flex items-start justify-between gap-4">
+                <div className="w-full">
+                  <p className="text-sm text-white/60">Lucro estimado do estoque</p>
+
+                  <div className="mt-3 space-y-3">
+                    <div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs text-white/50">Atacado</span>
+                        <span className="text-xs text-blue-300">{totals.stockMarginWholesale.toFixed(1)}%</span>
+                      </div>
+                      <h3 className="mt-1 text-lg font-semibold tracking-tight text-white">
+                        {brl(totals.stockProfitWholesale)}
+                      </h3>
+                    </div>
+
+                    <div className="border-t border-white/10 pt-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs text-white/50">Varejo</span>
+                        <span className="text-xs text-emerald-300">{totals.stockMarginRetail.toFixed(1)}%</span>
+                      </div>
+                      <h3 className="mt-1 text-lg font-semibold tracking-tight text-white">
+                        {brl(totals.stockProfitRetail)}
+                      </h3>
+                    </div>
+                  </div>
+
+                  <p className="mt-3 text-xs text-white/50">Lucro estimado sobre o custo total do estoque</p>
+                </div>
+
+                <div className="rounded-2xl bg-white/10 p-3">
+                  <Wallet className="h-5 w-5 text-white" />
+                </div>
+              </div>
+            </div>
+          </motion.div>
           <KPI title="Estoque baixo" value={String(totals.lowStock)} subtitle="Itens com 5 ou menos" icon={AlertTriangle} />
         </div>
 
