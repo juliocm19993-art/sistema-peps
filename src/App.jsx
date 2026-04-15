@@ -119,11 +119,10 @@ function parseBulkProducts(text) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((line) => {
-
-      // se tiver ; , ou tab → usa normal
-      if (/[;,\t]/.test(line)) {
-        const cols = line.split(/[;,\t]+/).map((p) => p.trim()).filter(Boolean);
+    .map((line, index) => {
+      // modo ; ou TAB
+      if (/[;\t]/.test(line)) {
+        const cols = line.split(/[;\t]+/).map((p) => p.trim()).filter(Boolean);
 
         if (cols.length < 5) {
           throw new Error("Cada linha precisa ter pelo menos 5 colunas.");
@@ -133,7 +132,7 @@ function parseBulkProducts(text) {
         const hasSixCols = cols.length >= 6;
 
         return {
-          id: Date.now() + Math.random(),
+          id: Date.now() + index,
           name,
           quantity: parseBRNumber(quantity),
           costTotal: parseBRNumber(costTotal),
@@ -142,11 +141,11 @@ function parseBulkProducts(text) {
         };
       }
 
-      // 👉 modo espaço inteligente
+      // modo espaço inteligente
       const parts = line.split(/\s+/);
 
       if (parts.length < 5) {
-        throw new Error("Formato inválido");
+        throw new Error("Formato inválido.");
       }
 
       const retail = parts.pop();
@@ -156,7 +155,7 @@ function parseBulkProducts(text) {
       const name = parts.join(" ");
 
       return {
-        id: Date.now() + Math.random(),
+        id: Date.now() + index,
         name,
         quantity: parseBRNumber(quantity),
         costTotal: parseBRNumber(costTotal),
