@@ -1240,7 +1240,6 @@ setSales((salesData || []).map(mapSaleFromDb));
       </div>
     </div>
   </div>
-</div>
         )}
 
         {activeTab === "vendas" && (
