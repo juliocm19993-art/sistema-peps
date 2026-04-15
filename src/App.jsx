@@ -1208,10 +1208,10 @@ setSales((salesData || []).map(mapSaleFromDb));
   <div className="space-y-3">
     <div className="rounded-xl border border-white/10 bg-white/5 p-2 text-xs text-white/65">
       <div className="mb-2 text-[11px] uppercase tracking-wide text-white/40">Formato aceito</div>
-      <div className="rounded-lg border border-white/10 bg-black/20 p-2 font-mono text-[11px] leading-relaxed text-white/75">
-        <div>Tirzepatida 60MG 10 600 900 1200</div>
-        <div>Cagrilintide 5MG;0;530,40;600,00;950,00</div>
-      </div>
+  <div className="rounded-lg border border-white/10 bg-black/20 p-2 font-mono text-[11px] leading-relaxed text-white/75">
+  <div>Tirzepatida 60MG 10 600 900 1200</div>
+  <div>Cagrilintide 5MG;0;530,40;600,00;950,00</div>
+  </div>
       <div className="mt-2 text-[11px] text-white/40">
         Ordem: nome, unidades, custo total, atacado, varejo
       </div>
