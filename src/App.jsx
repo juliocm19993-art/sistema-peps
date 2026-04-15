@@ -1239,7 +1239,9 @@ setSales((salesData || []).map(mapSaleFromDb));
         <div>Cagrilintide 5MG;0;530,40;600,00;950,00</div>
       </div>
     </div>
-  </div>
+    </div>
+    </div>
+          </div>
         )}
 
         {activeTab === "vendas" && (
