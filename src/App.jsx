@@ -120,7 +120,7 @@ function parseBulkProducts(text) {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const cols = line.split(/\t+/).map((part) => part.trim()).filter(Boolean);
+      const cols = line.split(/[;,\t]+/).map((part) => part.trim()).filter(Boolean);
 
       if (cols.length < 5) {
         throw new Error("Cada linha precisa ter pelo menos: nome, unidades, custo total, atacado e varejo.");
