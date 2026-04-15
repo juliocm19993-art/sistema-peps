@@ -881,7 +881,11 @@ setSales((salesData || []).map(mapSaleFromDb));
 <KPI
   title="Lucro varejo"
   value={brl(totals.stockProfitRetail)}
-  subtitle={`${totals.stockMarginRetail.toFixed(1)}% sobre o custo`}
+subtitle={
+  <span className={totals.stockMarginWholesale > 0 ? "text-emerald-400" : "text-red-400"}>
+    {totals.stockMarginWholesale.toFixed(1)}%
+  </span>
+}
   icon={TrendingUp}
 />
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
