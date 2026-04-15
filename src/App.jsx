@@ -1238,9 +1238,7 @@ setSales((salesData || []).map(mapSaleFromDb));
   </div>
 </div>
 
-        )}
-
-        {activeTab === "vendas" && (
+          {activeTab === "vendas" && (
           <div className="space-y-6">
             <SectionTitle icon={ShoppingCart} title="Controle de vendas" description="Histórico primeiro e nova venda abaixo para facilitar o uso." />
 
