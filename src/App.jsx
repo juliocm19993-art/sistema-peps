@@ -1197,47 +1197,50 @@ setSales((salesData || []).map(mapSaleFromDb));
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-lg backdrop-blur-xl">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="flex items-center gap-2 text-white text-base font-semibold">
-                  <Plus className="h-4 w-4" /> Inserção em lote
-                </h3>
-                <span className="text-[11px] text-white/45">até 10 produtos</span>
-              </div>
+<div className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-lg backdrop-blur-xl">
+  <div className="mb-4 flex items-center justify-between gap-3">
+    <h3 className="flex items-center gap-2 text-white text-base font-semibold">
+      <Plus className="h-4 w-4" /> Inserção em lote
+    </h3>
+    <span className="text-[11px] text-white/45">até 10 produtos</span>
+  </div>
 
-              <div className="space-y-3">
-                <div className="rounded-xl border border-white/10 bg-white/5 p-2 text-xs text-white/65">
-                  <div className="mb-2 text-[11px] uppercase tracking-wide text-white/40">Formato aceito</div>
-                  <div className="rounded-lg border border-white/10 bg-black/20 p-2 font-mono text-[11px] leading-relaxed text-white/75">
-                    <div>Tirzepatida 60MG 10 600 900 1200</div>
-                    <div>Cagrilintide 5MG;0;530,40;600,00;950,00</div>
-                  </div>
-                  <div className="mt-2 text-[11px] text-white/40">
-                    Ordem: nome, unidades, custo total, atacado, varejo
-                  </div>
-                </div>
+  <div className="space-y-3">
+    <div>
+      <label className="text-sm text-white/80">Produtos em lote</label>
+      <textarea
+        rows={5}
+        className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none placeholder:text-white/35"
+        value={productForm.bulkText}
+        onChange={(e) => setProductForm({ bulkText: e.target.value })}
+        placeholder="Cole aqui uma linha por produto"
+      />
+    </div>
 
-                <div>
-                  <label className="text-sm text-white/80">Produtos em lote</label>
-                  <textarea
-                    rows={5}
-                    className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none"
-                    value={productForm.bulkText}
-                    onChange={(e) => setProductForm({ bulkText: e.target.value })}
-                    placeholder="Cole aqui uma linha por produto"
-                  />
-                </div>
+    <button
+      onClick={addProduct}
+      disabled={syncing}
+      className="w-full rounded-xl bg-white py-2.5 font-semibold text-sm text-slate-900 transition hover:bg-white/90 disabled:opacity-60"
+    >
+      Inserir produtos automaticamente
+    </button>
 
-                <button
-                  onClick={addProduct}
-                  disabled={syncing}
-                  className="w-full rounded-xl bg-white py-2.5 font-semibold text-sm text-slate-900 transition hover:bg-white/90 disabled:opacity-60"
-                >
-                  Inserir produtos automaticamente
-                </button>
-              </div>
-            </div>
-          </div>
+    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="text-[11px] uppercase tracking-wide text-white/40">
+        Instruções de uso
+      </div>
+
+      <div className="mt-2 text-[12px] text-white/55">
+        Ordem: nome, unidades, custo total, atacado, varejo
+      </div>
+
+      <div className="mt-2 rounded-lg border border-white/10 bg-white/5 p-2 font-mono text-[11px] leading-relaxed text-white/70">
+        <div>Tirzepatida 60MG 10 600 900 1200</div>
+        <div>Cagrilintide 5MG;0;530,40;600,00;950,00</div>
+      </div>
+    </div>
+  </div>
+</div>
         )}
 
         {activeTab === "vendas" && (
