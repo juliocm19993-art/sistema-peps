@@ -159,11 +159,24 @@ function mapSaleToDb(sale) {
 }
 
 function computeProductMetrics(product, sales) {
-  const costUnit = product.quantity > 0 ? product.costTotal / product.quantity : 0;
-  const marginWholesale = product.wholesale > 0 ? ((product.wholesale - costUnit) / product.wholesale) * 100 : 0;
-  const marginRetail = product.retail > 0 ? ((product.retail - costUnit) / product.retail) * 100 : 0;
-  const soldQty = sales.filter((sale) => sale.productId === product.id).reduce((sum, sale) => sum + sale.qty, 0);
-  const stockCurrent = Math.max(product.quantity - soldQty, 0);
+  const soldQty = sales
+    .filter((sale) => sale.productId === product.id)
+    .reduce((sum, sale) => sum + sale.qty, 0);
+
+  const stockCurrent = Math.max(Number(product.quantity || 0) - soldQty, 0);
+  const hasStock = Number(product.quantity || 0) > 0;
+
+  const costUnit = hasStock ? Number(product.costTotal || 0) / Number(product.quantity || 0) : 0;
+
+  const marginWholesale =
+    hasStock && Number(product.wholesale || 0) > 0
+      ? ((Number(product.wholesale || 0) - costUnit) / Number(product.wholesale || 0)) * 100
+      : 0;
+
+  const marginRetail =
+    hasStock && Number(product.retail || 0) > 0
+      ? ((Number(product.retail || 0) - costUnit) / Number(product.retail || 0)) * 100
+      : 0;
 
   return {
     ...product,
@@ -172,6 +185,7 @@ function computeProductMetrics(product, sales) {
     marginRetail,
     soldQty,
     stockCurrent,
+    hasStock,
   };
 }
 
@@ -300,6 +314,7 @@ function SimpleSelect({ value, onChange, options, className = "" }) {
 export default function SistemaControleNegocio() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [products, setProducts] = useState([]);
+  const [productRows, setProductRows] = useState([]);
   const [sales, setSales] = useState([]);
   const [productForm, setProductForm] = useState({ name: "", quantity: "", costTotal: "", wholesale: "", retail: "" });
   const [saleForm, setSaleForm] = useState({ date: todayISO(), productId: "", type: "varejo", qty: "" });
@@ -354,6 +369,10 @@ setSales((salesData || []).map(mapSaleFromDb));
       active = false;
     };
   }, [isSupabaseConfigured, supabase]);
+
+  useEffect(() => {
+    setProductRows(products);
+  }, [products]);
 
   const enrichedProducts = useMemo(() => products.map((product) => computeProductMetrics(product, sales)), [products, sales]);
   const enrichedSales = useMemo(() => sales.map((sale) => computeSaleMetrics(sale, enrichedProducts)), [sales, enrichedProducts]);
@@ -457,6 +476,32 @@ setSales((salesData || []).map(mapSaleFromDb));
     }
   }
 
+  async function saveAllProducts() {
+    try {
+      setSyncing(true);
+      setDbError("");
+
+      const normalizedRows = productRows.map((p) => ({
+        ...p,
+        id: Number(p.id),
+        quantity: Number(p.quantity || 0),
+        costTotal: Number(p.costTotal || 0),
+        wholesale: Number(p.wholesale || 0),
+        retail: Number(p.retail || 0),
+      }));
+
+      for (const p of normalizedRows) {
+        await persistProduct(p);
+      }
+
+      setProducts(normalizedRows);
+    } catch (error) {
+      setDbError(error.message || "Erro ao salvar tudo.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   function startEditProduct(product) {
     setEditingProductId(product.id);
     setProductEditForm({
@@ -518,12 +563,27 @@ setSales((salesData || []).map(mapSaleFromDb));
   async function addSale() {
     if (!saleForm.productId || !saleForm.qty || !saleForm.date) return;
 
+    const selectedProduct = enrichedProducts.find(
+      (product) => product.id === Number(saleForm.productId)
+    );
+    const requestedQty = Number(saleForm.qty || 0);
+
+    if (!selectedProduct || selectedProduct.stockCurrent <= 0) {
+      setDbError("Produto sem estoque.");
+      return;
+    }
+
+    if (requestedQty > selectedProduct.stockCurrent) {
+      setDbError("Quantidade maior que o estoque.");
+      return;
+    }
+
     const newSale = {
       id: Date.now(),
       date: saleForm.date,
       productId: Number(saleForm.productId),
       type: saleForm.type,
-      qty: toNumber(saleForm.qty),
+      qty: requestedQty,
     };
 
     try {
@@ -796,80 +856,106 @@ setSales((salesData || []).map(mapSaleFromDb));
             <SectionTitle icon={Boxes} title="Cadastro de produtos" description="A lista fica primeiro e o formulário de novo produto vem abaixo para facilitar a edição." />
 
             <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur-xl">
-              <h3 className="mb-4 text-white text-lg font-semibold">Tabela de produtos</h3>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h3 className="text-white text-lg font-semibold">Tabela de produtos</h3>
+                <button
+                  onClick={saveAllProducts}
+                  disabled={syncing}
+                  className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:opacity-60"
+                >
+                  Salvar tudo
+                </button>
+              </div>
 
               <div className="space-y-4 lg:hidden">
-                {enrichedProducts.map((product) => {
-                  const isEditing = editingProductId === product.id;
+                {productRows.map((product) => {
+                  const productMetrics = computeProductMetrics(product, sales);
                   return (
                     <div key={product.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                       <div className="mb-4 flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="break-words text-base font-semibold text-white">
-                            {isEditing ? (
-                              <RowInput value={productEditForm.name || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, name: e.target.value }))} />
-                            ) : (
-                              product.name
-                            )}
+                            <RowInput
+                              value={product.name}
+                              onChange={(e) =>
+                                setProductRows((prev) =>
+                                  prev.map((p) => (p.id === product.id ? { ...p, name: e.target.value } : p))
+                                )
+                              }
+                            />
                           </p>
                         </div>
-                        <span className="shrink-0 rounded-full border border-emerald-400/20 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-300">
-                          {product.marginRetail.toFixed(1)}%
-                        </span>
+                        {productMetrics.hasStock ? (
+                          <span className="shrink-0 rounded-full border border-emerald-400/20 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-300">
+                            {productMetrics.marginRetail.toFixed(1)}%
+                          </span>
+                        ) : (
+                          <span className="shrink-0 rounded-full border border-amber-400/20 bg-amber-500/15 px-3 py-1 text-xs text-amber-300">
+                            Sem estoque
+                          </span>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
                         <MobileField label="Unidades">
-                          {isEditing ? (
-                            <RowInput type="number" value={productEditForm.quantity || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, quantity: e.target.value }))} />
-                          ) : (
-                            product.quantity
-                          )}
+                          <RowInput
+                            type="number"
+                            value={product.quantity}
+                            onChange={(e) =>
+                              setProductRows((prev) =>
+                                prev.map((p) =>
+                                  p.id === product.id ? { ...p, quantity: Number(e.target.value || 0) } : p
+                                )
+                              )
+                            }
+                          />
                         </MobileField>
-                        <MobileField label="Custo unitário" value={brl(product.costUnit)} />
+                        <MobileField label="Custo unitário" value={brl(productMetrics.costUnit)} />
                         <MobileField label="Custo total">
-                          {isEditing ? (
-                            <RowInput type="number" value={productEditForm.costTotal || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, costTotal: e.target.value }))} />
-                          ) : (
-                            brl(product.costTotal)
-                          )}
+                          <RowInput
+                            type="number"
+                            value={product.costTotal}
+                            onChange={(e) =>
+                              setProductRows((prev) =>
+                                prev.map((p) =>
+                                  p.id === product.id ? { ...p, costTotal: Number(e.target.value || 0) } : p
+                                )
+                              )
+                            }
+                          />
                         </MobileField>
                         <MobileField label="Atacado">
-                          {isEditing ? (
-                            <RowInput type="number" value={productEditForm.wholesale || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, wholesale: e.target.value }))} />
-                          ) : (
-                            brl(product.wholesale)
-                          )}
+                          <RowInput
+                            type="number"
+                            value={product.wholesale}
+                            onChange={(e) =>
+                              setProductRows((prev) =>
+                                prev.map((p) =>
+                                  p.id === product.id ? { ...p, wholesale: Number(e.target.value || 0) } : p
+                                )
+                              )
+                            }
+                          />
                         </MobileField>
                         <MobileField label="Varejo">
-                          {isEditing ? (
-                            <RowInput type="number" value={productEditForm.retail || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, retail: e.target.value }))} />
-                          ) : (
-                            brl(product.retail)
-                          )}
+                          <RowInput
+                            type="number"
+                            value={product.retail}
+                            onChange={(e) =>
+                              setProductRows((prev) =>
+                                prev.map((p) =>
+                                  p.id === product.id ? { ...p, retail: Number(e.target.value || 0) } : p
+                                )
+                              )
+                            }
+                          />
                         </MobileField>
                       </div>
 
                       <div className="mt-4 flex items-center justify-end gap-2">
-                        {isEditing ? (
-                          <>
-                            <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-emerald-300" onClick={() => saveProduct(product.id)}>
-                              <Save className="h-4 w-4" />
-                            </button>
-                            <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/80" onClick={cancelEditProduct}>
-                              <X className="h-4 w-4" />
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-blue-300" onClick={() => startEditProduct(product)}>
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-red-300" onClick={() => deleteProduct(product.id)}>
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </>
-                        )}
+                        <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-red-300" onClick={() => deleteProduct(product.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     </div>
                   );
@@ -891,72 +977,93 @@ setSales((salesData || []).map(mapSaleFromDb));
                     </tr>
                   </thead>
                   <tbody>
-                    {enrichedProducts.map((product) => {
-                      const isEditing = editingProductId === product.id;
+                    {productRows.map((product) => {
+                      const productMetrics = computeProductMetrics(product, sales);
                       return (
                         <tr key={product.id} className="border-b border-white/10 align-middle">
                           <td className="p-3 text-white">
-                            {isEditing ? (
-                              <RowInput value={productEditForm.name || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, name: e.target.value }))} />
-                            ) : (
-                              product.name
-                            )}
+                            <RowInput
+                              value={product.name}
+                              onChange={(e) =>
+                                setProductRows((prev) =>
+                                  prev.map((p) => (p.id === product.id ? { ...p, name: e.target.value } : p))
+                                )
+                              }
+                            />
                           </td>
                           <td className="p-3 text-white/80">
-                            {isEditing ? (
-                              <RowInput type="number" value={productEditForm.quantity || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, quantity: e.target.value }))} className="w-20" />
-                            ) : (
-                              product.quantity
-                            )}
+                            <RowInput
+                              type="number"
+                              value={product.quantity}
+                              onChange={(e) =>
+                                setProductRows((prev) =>
+                                  prev.map((p) =>
+                                    p.id === product.id ? { ...p, quantity: Number(e.target.value || 0) } : p
+                                  )
+                                )
+                              }
+                              className="w-20"
+                            />
                           </td>
                           <td className="p-3 text-white/80">
-                            {isEditing ? (
-                              <RowInput type="number" value={productEditForm.costTotal || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, costTotal: e.target.value }))} className="w-28" />
-                            ) : (
-                              brl(product.costTotal)
-                            )}
+                            <RowInput
+                              type="number"
+                              value={product.costTotal}
+                              onChange={(e) =>
+                                setProductRows((prev) =>
+                                  prev.map((p) =>
+                                    p.id === product.id ? { ...p, costTotal: Number(e.target.value || 0) } : p
+                                  )
+                                )
+                              }
+                              className="w-28"
+                            />
                           </td>
-                          <td className="p-3 text-white/80">{brl(product.costUnit)}</td>
+                          <td className="p-3 text-white/80">{brl(productMetrics.costUnit)}</td>
                           <td className="p-3 text-white/80">
-                            {isEditing ? (
-                              <RowInput type="number" value={productEditForm.wholesale || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, wholesale: e.target.value }))} className="w-24" />
-                            ) : (
-                              brl(product.wholesale)
-                            )}
+                            <RowInput
+                              type="number"
+                              value={product.wholesale}
+                              onChange={(e) =>
+                                setProductRows((prev) =>
+                                  prev.map((p) =>
+                                    p.id === product.id ? { ...p, wholesale: Number(e.target.value || 0) } : p
+                                  )
+                                )
+                              }
+                              className="w-24"
+                            />
                           </td>
                           <td className="p-3 text-white/80">
-                            {isEditing ? (
-                              <RowInput type="number" value={productEditForm.retail || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, retail: e.target.value }))} className="w-24" />
-                            ) : (
-                              brl(product.retail)
-                            )}
+                            <RowInput
+                              type="number"
+                              value={product.retail}
+                              onChange={(e) =>
+                                setProductRows((prev) =>
+                                  prev.map((p) =>
+                                    p.id === product.id ? { ...p, retail: Number(e.target.value || 0) } : p
+                                  )
+                                )
+                              }
+                              className="w-24"
+                            />
                           </td>
                           <td className="p-3">
-                            <span className="rounded-full border border-emerald-400/20 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-300">
-                              {product.marginRetail.toFixed(1)}%
-                            </span>
+                            {productMetrics.hasStock ? (
+                              <span className="rounded-full border border-emerald-400/20 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-300">
+                                {productMetrics.marginRetail.toFixed(1)}%
+                              </span>
+                            ) : (
+                              <span className="rounded-full border border-amber-400/20 bg-amber-500/15 px-3 py-1 text-xs text-amber-300">
+                                Sem estoque
+                              </span>
+                            )}
                           </td>
                           <td className="p-3">
                             <div className="flex justify-end gap-2">
-                              {isEditing ? (
-                                <>
-                                  <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-emerald-300" onClick={() => saveProduct(product.id)}>
-                                    <Save className="h-4 w-4" />
-                                  </button>
-                                  <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/80" onClick={cancelEditProduct}>
-                                    <X className="h-4 w-4" />
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-blue-300" onClick={() => startEditProduct(product)}>
-                                    <Pencil className="h-4 w-4" />
-                                  </button>
-                                  <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-red-300" onClick={() => deleteProduct(product.id)}>
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                </>
-                              )}
+                              <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-red-300" onClick={() => deleteProduct(product.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </button>
                             </div>
                           </td>
                         </tr>
