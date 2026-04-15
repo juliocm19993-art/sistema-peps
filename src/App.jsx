@@ -120,23 +120,48 @@ function parseBulkProducts(text) {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const cols = line.split(/[;,\t]+/).map((part) => part.trim()).filter(Boolean);
 
-      if (cols.length < 5) {
-        throw new Error("Cada linha precisa ter pelo menos: nome, unidades, custo total, atacado e varejo.");
+      // se tiver ; , ou tab → usa normal
+      if (/[;,\t]/.test(line)) {
+        const cols = line.split(/[;,\t]+/).map((p) => p.trim()).filter(Boolean);
+
+        if (cols.length < 5) {
+          throw new Error("Cada linha precisa ter pelo menos 5 colunas.");
+        }
+
+        const [name, quantity, costTotal, maybeCostUnit, maybeWholesale, maybeRetail] = cols;
+        const hasSixCols = cols.length >= 6;
+
+        return {
+          id: Date.now() + Math.random(),
+          name,
+          quantity: parseBRNumber(quantity),
+          costTotal: parseBRNumber(costTotal),
+          wholesale: parseBRNumber(hasSixCols ? maybeWholesale : maybeCostUnit),
+          retail: parseBRNumber(hasSixCols ? maybeRetail : maybeWholesale),
+        };
       }
 
-      const [name, quantity, costTotal, maybeCostUnit, maybeWholesale, maybeRetail] = cols;
+      // 👉 modo espaço inteligente
+      const parts = line.split(/\s+/);
 
-      const hasSixCols = cols.length >= 6;
+      if (parts.length < 5) {
+        throw new Error("Formato inválido");
+      }
+
+      const retail = parts.pop();
+      const wholesale = parts.pop();
+      const costTotal = parts.pop();
+      const quantity = parts.pop();
+      const name = parts.join(" ");
 
       return {
-        id: Date.now() + Math.floor(Math.random() * 1000000),
+        id: Date.now() + Math.random(),
         name,
         quantity: parseBRNumber(quantity),
         costTotal: parseBRNumber(costTotal),
-        wholesale: parseBRNumber(hasSixCols ? maybeWholesale : maybeCostUnit),
-        retail: parseBRNumber(hasSixCols ? maybeRetail : maybeWholesale),
+        wholesale: parseBRNumber(wholesale),
+        retail: parseBRNumber(retail),
       };
     });
 }
