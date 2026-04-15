@@ -314,7 +314,6 @@ function SimpleSelect({ value, onChange, options, className = "" }) {
 export default function SistemaControleNegocio() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [products, setProducts] = useState([]);
-  const [productRows, setProductRows] = useState([]);
   const [sales, setSales] = useState([]);
   const [productForm, setProductForm] = useState({ name: "", quantity: "", costTotal: "", wholesale: "", retail: "" });
   const [saleForm, setSaleForm] = useState({ date: todayISO(), productId: "", type: "varejo", qty: "" });
@@ -370,15 +369,15 @@ setSales((salesData || []).map(mapSaleFromDb));
     };
   }, [isSupabaseConfigured, supabase]);
 
-  useEffect(() => {
-    setProductRows(products);
-  }, [products]);
 
   const enrichedProducts = useMemo(() => products.map((product) => computeProductMetrics(product, sales)), [products, sales]);
   const enrichedSales = useMemo(() => sales.map((sale) => computeSaleMetrics(sale, enrichedProducts)), [sales, enrichedProducts]);
 
   const totals = useMemo(() => {
-    const inventoryCost = enrichedProducts.reduce((sum, product) => sum + product.costTotal, 0);
+    const inventoryCost = enrichedProducts.reduce(
+      (sum, product) => sum + (Number(product.quantity || 0) > 0 ? Number(product.costTotal || 0) : 0),
+      0
+    );
     const potentialWholesale = enrichedProducts.reduce((sum, product) => sum + product.quantity * product.wholesale, 0);
     const potentialRetail = enrichedProducts.reduce((sum, product) => sum + product.quantity * product.retail, 0);
     const revenue = enrichedSales.reduce((sum, sale) => sum + sale.revenue, 0);
@@ -471,32 +470,6 @@ setSales((salesData || []).map(mapSaleFromDb));
       setProductForm({ name: "", quantity: "", costTotal: "", wholesale: "", retail: "" });
     } catch (error) {
       setDbError(error.message || "Erro ao salvar produto.");
-    } finally {
-      setSyncing(false);
-    }
-  }
-
-  async function saveAllProducts() {
-    try {
-      setSyncing(true);
-      setDbError("");
-
-      const normalizedRows = productRows.map((p) => ({
-        ...p,
-        id: Number(p.id),
-        quantity: Number(p.quantity || 0),
-        costTotal: Number(p.costTotal || 0),
-        wholesale: Number(p.wholesale || 0),
-        retail: Number(p.retail || 0),
-      }));
-
-      for (const p of normalizedRows) {
-        await persistProduct(p);
-      }
-
-      setProducts(normalizedRows);
-    } catch (error) {
-      setDbError(error.message || "Erro ao salvar tudo.");
     } finally {
       setSyncing(false);
     }
@@ -856,38 +829,26 @@ setSales((salesData || []).map(mapSaleFromDb));
             <SectionTitle icon={Boxes} title="Cadastro de produtos" description="A lista fica primeiro e o formulário de novo produto vem abaixo para facilitar a edição." />
 
             <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur-xl">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h3 className="text-white text-lg font-semibold">Tabela de produtos</h3>
-                <button
-                  onClick={saveAllProducts}
-                  disabled={syncing}
-                  className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:opacity-60"
-                >
-                  Salvar tudo
-                </button>
-              </div>
+              <h3 className="mb-4 text-white text-lg font-semibold">Tabela de produtos</h3>
 
               <div className="space-y-4 lg:hidden">
-                {productRows.map((product) => {
-                  const productMetrics = computeProductMetrics(product, sales);
+                {enrichedProducts.map((product) => {
+                  const isEditing = editingProductId === product.id;
                   return (
                     <div key={product.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                       <div className="mb-4 flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="break-words text-base font-semibold text-white">
-                            <RowInput
-                              value={product.name}
-                              onChange={(e) =>
-                                setProductRows((prev) =>
-                                  prev.map((p) => (p.id === product.id ? { ...p, name: e.target.value } : p))
-                                )
-                              }
-                            />
+                            {isEditing ? (
+                              <RowInput value={productEditForm.name || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, name: e.target.value }))} />
+                            ) : (
+                              product.name
+                            )}
                           </p>
                         </div>
-                        {productMetrics.hasStock ? (
+                        {product.hasStock ? (
                           <span className="shrink-0 rounded-full border border-emerald-400/20 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-300">
-                            {productMetrics.marginRetail.toFixed(1)}%
+                            {product.marginRetail.toFixed(1)}%
                           </span>
                         ) : (
                           <span className="shrink-0 rounded-full border border-amber-400/20 bg-amber-500/15 px-3 py-1 text-xs text-amber-300">
@@ -898,64 +859,56 @@ setSales((salesData || []).map(mapSaleFromDb));
 
                       <div className="grid grid-cols-2 gap-3">
                         <MobileField label="Unidades">
-                          <RowInput
-                            type="number"
-                            value={product.quantity}
-                            onChange={(e) =>
-                              setProductRows((prev) =>
-                                prev.map((p) =>
-                                  p.id === product.id ? { ...p, quantity: Number(e.target.value || 0) } : p
-                                )
-                              )
-                            }
-                          />
+                          {isEditing ? (
+                            <RowInput type="number" value={productEditForm.quantity || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, quantity: e.target.value }))} />
+                          ) : (
+                            product.quantity
+                          )}
                         </MobileField>
-                        <MobileField label="Custo unitário" value={brl(productMetrics.costUnit)} />
+                        <MobileField label="Custo unitário" value={brl(product.costUnit)} />
                         <MobileField label="Custo total">
-                          <RowInput
-                            type="number"
-                            value={product.costTotal}
-                            onChange={(e) =>
-                              setProductRows((prev) =>
-                                prev.map((p) =>
-                                  p.id === product.id ? { ...p, costTotal: Number(e.target.value || 0) } : p
-                                )
-                              )
-                            }
-                          />
+                          {isEditing ? (
+                            <RowInput type="number" value={productEditForm.costTotal || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, costTotal: e.target.value }))} />
+                          ) : (
+                            brl(product.costTotal)
+                          )}
                         </MobileField>
                         <MobileField label="Atacado">
-                          <RowInput
-                            type="number"
-                            value={product.wholesale}
-                            onChange={(e) =>
-                              setProductRows((prev) =>
-                                prev.map((p) =>
-                                  p.id === product.id ? { ...p, wholesale: Number(e.target.value || 0) } : p
-                                )
-                              )
-                            }
-                          />
+                          {isEditing ? (
+                            <RowInput type="number" value={productEditForm.wholesale || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, wholesale: e.target.value }))} />
+                          ) : (
+                            brl(product.wholesale)
+                          )}
                         </MobileField>
                         <MobileField label="Varejo">
-                          <RowInput
-                            type="number"
-                            value={product.retail}
-                            onChange={(e) =>
-                              setProductRows((prev) =>
-                                prev.map((p) =>
-                                  p.id === product.id ? { ...p, retail: Number(e.target.value || 0) } : p
-                                )
-                              )
-                            }
-                          />
+                          {isEditing ? (
+                            <RowInput type="number" value={productEditForm.retail || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, retail: e.target.value }))} />
+                          ) : (
+                            brl(product.retail)
+                          )}
                         </MobileField>
                       </div>
 
                       <div className="mt-4 flex items-center justify-end gap-2">
-                        <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-red-300" onClick={() => deleteProduct(product.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {isEditing ? (
+                          <>
+                            <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-emerald-300" onClick={() => saveProduct(product.id)}>
+                              <Save className="h-4 w-4" />
+                            </button>
+                            <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/80" onClick={cancelEditProduct}>
+                              <X className="h-4 w-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-blue-300" onClick={() => startEditProduct(product)}>
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-red-300" onClick={() => deleteProduct(product.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
@@ -977,81 +930,50 @@ setSales((salesData || []).map(mapSaleFromDb));
                     </tr>
                   </thead>
                   <tbody>
-                    {productRows.map((product) => {
-                      const productMetrics = computeProductMetrics(product, sales);
+                    {enrichedProducts.map((product) => {
+                      const isEditing = editingProductId === product.id;
                       return (
                         <tr key={product.id} className="border-b border-white/10 align-middle">
                           <td className="p-3 text-white">
-                            <RowInput
-                              value={product.name}
-                              onChange={(e) =>
-                                setProductRows((prev) =>
-                                  prev.map((p) => (p.id === product.id ? { ...p, name: e.target.value } : p))
-                                )
-                              }
-                            />
+                            {isEditing ? (
+                              <RowInput value={productEditForm.name || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, name: e.target.value }))} />
+                            ) : (
+                              product.name
+                            )}
                           </td>
                           <td className="p-3 text-white/80">
-                            <RowInput
-                              type="number"
-                              value={product.quantity}
-                              onChange={(e) =>
-                                setProductRows((prev) =>
-                                  prev.map((p) =>
-                                    p.id === product.id ? { ...p, quantity: Number(e.target.value || 0) } : p
-                                  )
-                                )
-                              }
-                              className="w-20"
-                            />
+                            {isEditing ? (
+                              <RowInput type="number" value={productEditForm.quantity || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, quantity: e.target.value }))} className="w-20" />
+                            ) : (
+                              product.quantity
+                            )}
                           </td>
                           <td className="p-3 text-white/80">
-                            <RowInput
-                              type="number"
-                              value={product.costTotal}
-                              onChange={(e) =>
-                                setProductRows((prev) =>
-                                  prev.map((p) =>
-                                    p.id === product.id ? { ...p, costTotal: Number(e.target.value || 0) } : p
-                                  )
-                                )
-                              }
-                              className="w-28"
-                            />
+                            {isEditing ? (
+                              <RowInput type="number" value={productEditForm.costTotal || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, costTotal: e.target.value }))} className="w-28" />
+                            ) : (
+                              brl(product.costTotal)
+                            )}
                           </td>
-                          <td className="p-3 text-white/80">{brl(productMetrics.costUnit)}</td>
+                          <td className="p-3 text-white/80">{brl(product.costUnit)}</td>
                           <td className="p-3 text-white/80">
-                            <RowInput
-                              type="number"
-                              value={product.wholesale}
-                              onChange={(e) =>
-                                setProductRows((prev) =>
-                                  prev.map((p) =>
-                                    p.id === product.id ? { ...p, wholesale: Number(e.target.value || 0) } : p
-                                  )
-                                )
-                              }
-                              className="w-24"
-                            />
+                            {isEditing ? (
+                              <RowInput type="number" value={productEditForm.wholesale || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, wholesale: e.target.value }))} className="w-24" />
+                            ) : (
+                              brl(product.wholesale)
+                            )}
                           </td>
                           <td className="p-3 text-white/80">
-                            <RowInput
-                              type="number"
-                              value={product.retail}
-                              onChange={(e) =>
-                                setProductRows((prev) =>
-                                  prev.map((p) =>
-                                    p.id === product.id ? { ...p, retail: Number(e.target.value || 0) } : p
-                                  )
-                                )
-                              }
-                              className="w-24"
-                            />
+                            {isEditing ? (
+                              <RowInput type="number" value={productEditForm.retail || ""} onChange={(e) => setProductEditForm((prev) => ({ ...prev, retail: e.target.value }))} className="w-24" />
+                            ) : (
+                              brl(product.retail)
+                            )}
                           </td>
                           <td className="p-3">
-                            {productMetrics.hasStock ? (
+                            {product.hasStock ? (
                               <span className="rounded-full border border-emerald-400/20 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-300">
-                                {productMetrics.marginRetail.toFixed(1)}%
+                                {product.marginRetail.toFixed(1)}%
                               </span>
                             ) : (
                               <span className="rounded-full border border-amber-400/20 bg-amber-500/15 px-3 py-1 text-xs text-amber-300">
@@ -1061,9 +983,25 @@ setSales((salesData || []).map(mapSaleFromDb));
                           </td>
                           <td className="p-3">
                             <div className="flex justify-end gap-2">
-                              <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-red-300" onClick={() => deleteProduct(product.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </button>
+                              {isEditing ? (
+                                <>
+                                  <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-emerald-300" onClick={() => saveProduct(product.id)}>
+                                    <Save className="h-4 w-4" />
+                                  </button>
+                                  <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/80" onClick={cancelEditProduct}>
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-blue-300" onClick={() => startEditProduct(product)}>
+                                    <Pencil className="h-4 w-4" />
+                                  </button>
+                                  <button className="rounded-xl border border-white/10 bg-white/5 p-2 text-red-300" onClick={() => deleteProduct(product.id)}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>
