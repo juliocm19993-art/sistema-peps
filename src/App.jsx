@@ -1212,37 +1212,6 @@ CJC-1295 5mg + IPA - 5mg	0	R$ 962,00	R$ 0,00	R$ 300,00	R$ 650,00`}
             </div>
           </div>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="text-sm text-white/80">Preço atacado</label>
-                    <input
-                      type="number"
-                      className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-white outline-none"
-                      value={productForm.wholesale}
-                      onChange={(e) => setProductForm((prev) => ({ ...prev, wholesale: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm text-white/80">Preço varejo</label>
-                    <input
-                      type="number"
-                      className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-white outline-none"
-                      value={productForm.retail}
-                      onChange={(e) => setProductForm((prev) => ({ ...prev, retail: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                <button
-                  onClick={addProduct}
-                  disabled={syncing}
-                  className="w-full rounded-2xl bg-white py-3 font-semibold text-slate-900 transition hover:bg-white/90 disabled:opacity-60"
-                >
-                  Salvar produto
-                </button>
-              </div>
-            </div>
-          </div>
         )}
 
         {activeTab === "vendas" && (
