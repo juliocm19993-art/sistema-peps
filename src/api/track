@@ -1,0 +1,31 @@
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  try {
+    const { trackingCode } = req.body || {};
+
+    if (!trackingCode) {
+      return res.status(400).json({ error: "Tracking code is required" });
+    }
+
+    const apiKey = process.env.TRACKING_API_KEY;
+    const provider = process.env.TRACKING_PROVIDER || "17track";
+
+    let result;
+
+    if (provider === "17track") {
+      // aqui você chama a API do 17TRACK
+      // normaliza e salva no Supabase
+      result = { trackingCode, provider, status: "in_transit", events: [] };
+    } else {
+      // aqui você chama o AfterShip
+      result = { trackingCode, provider, status: "in_transit", events: [] };
+    }
+
+    return res.status(200).json(result);
+  } catch (error) {
+    return res.status(500).json({ error: error.message || "Internal error" });
+  }
+}
