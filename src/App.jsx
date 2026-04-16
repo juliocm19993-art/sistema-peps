@@ -874,7 +874,11 @@ setSales((salesData || []).map(mapSaleFromDb));
 <KPI
   title="Lucro atacado"
   value={brl(totals.stockProfitWholesale)}
-  subtitle={`${totals.stockMarginWholesale.toFixed(1)}% sobre o custo`}
+subtitle={
+  <span className={totals.stockMarginWholesale > 0 ? "text-emerald-400" : "text-red-400"}>
+    {totals.stockMarginWholesale.toFixed(1)}%
+  </span>
+}
   icon={Boxes}
 />
 
@@ -888,43 +892,7 @@ subtitle={
 }
   icon={TrendingUp}
 />
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-2xl backdrop-blur-xl">
-              <div className="flex items-start justify-between gap-4">
-                <div className="w-full">
-                  <p className="text-sm text-white/60">Lucro estimado do estoque</p>
-
-                  <div className="mt-3 space-y-3">
-                    <div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-xs text-white/50">Atacado</span>
-                        <span className="text-xs text-blue-300">{totals.stockMarginWholesale.toFixed(1)}%</span>
-                      </div>
-                      <h3 className="mt-1 text-lg font-semibold tracking-tight text-white">
-                        {brl(totals.stockProfitWholesale)}
-                      </h3>
-                    </div>
-
-                    <div className="border-t border-white/10 pt-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-xs text-white/50">Varejo</span>
-                        <span className="text-xs text-emerald-300">{totals.stockMarginRetail.toFixed(1)}%</span>
-                      </div>
-                      <h3 className="mt-1 text-lg font-semibold tracking-tight text-white">
-                        {brl(totals.stockProfitRetail)}
-                      </h3>
-                    </div>
-                  </div>
-
-                  <p className="mt-3 text-xs text-white/50">Lucro estimado sobre o custo total do estoque</p>
-                </div>
-
-                <div className="rounded-2xl bg-white/10 p-3">
-                  <Wallet className="h-5 w-5 text-white" />
-                </div>
-              </div>
-            </div>
-          </motion.div>
+<KPI title="Ticket médio" value={brl(totals.avgTicket)} subtitle="Por venda lançada" icon={Wallet} />
           <KPI title="Estoque baixo" value={String(totals.lowStock)} subtitle="Itens com 5 ou menos" icon={AlertTriangle} />
         </div>
 
