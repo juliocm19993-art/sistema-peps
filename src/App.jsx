@@ -1,3 +1,4 @@
+import TrackingPanel from "./components/TrackingPanel";
 import React, { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -790,6 +791,7 @@ setSales((salesData || []).map(mapSaleFromDb));
     { key: "produtos", label: "Produtos" },
     { key: "vendas", label: "Vendas" },
     { key: "estoque", label: "Estoque" },
+    { key: "rastreio", label: "Rastreio" },    
     { key: "testes", label: "Testes" },
   ];
 
